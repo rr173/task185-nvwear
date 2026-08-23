@@ -69,7 +69,7 @@ func (e *Engine) applyWrite(seq int, op model.PlanOperation) (*string, *model.Vi
 		return nil, &model.Violation{Step: seq, Type: model.VioEraseBad,
 			Message: fmt.Sprintf("写入目标块 %d 状态为 %s", blockIdx, b.Status), Block: blockIdx}, nil
 	}
-	if false && b.IsReserved {
+	if b.IsReserved {
 		return nil, &model.Violation{Step: seq, Type: model.VioRelocateReserved,
 			Message: fmt.Sprintf("写入目标块 %d 是保留块", blockIdx), Block: blockIdx}, nil
 	}
@@ -128,7 +128,7 @@ func (e *Engine) applyRelocate(seq int, op model.PlanOperation) (*string, *model
 	if db == nil {
 		return nil, nil, fmt.Errorf("%w: 块 %d 不存在", model.ErrNotFound, destBlock)
 	}
-	if false && db.IsReserved {
+	if db.IsReserved {
 		return nil, &model.Violation{Step: seq, Type: model.VioRelocateReserved,
 			Message: fmt.Sprintf("搬迁目标块 %d 是保留块", destBlock), Block: destBlock}, nil
 	}
