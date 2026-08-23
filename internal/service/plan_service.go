@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"sync"
 	"time"
 
 	"task185-nvwear/internal/budget"
@@ -26,6 +27,7 @@ type PlanService struct {
 	mappings    *store.MappingStore
 	configs     *store.ConfigStore
 	db          *store.DB
+	createMu    *sync.Mutex
 }
 
 // PlanCreateInput 创建计划输入。
@@ -37,6 +39,10 @@ type PlanCreateInput struct {
 
 // Create 创建计划（编辑中）。
 func (s *PlanService) Create(ctx context.Context, in PlanCreateInput) (*model.OperationPlan, error) {
+	if s.createMu != nil {
+		s.createMu.Lock()
+		defer s.createMu.Unlock()
+	}
 	if in.Name == "" {
 		return nil, fmt.Errorf("%w: 计划名不能为空", model.ErrInvalidInput)
 	}

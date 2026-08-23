@@ -2,6 +2,8 @@
 package service
 
 import (
+	"sync"
+
 	"task185-nvwear/internal/certificate"
 	"task185-nvwear/internal/store"
 )
@@ -31,7 +33,7 @@ func New(db *store.DB) *App {
 
 	return &App{
 		Configs: &ConfigService{configs: cs, blocks: bs, mappings: ms},
-		Plans:   &PlanService{plans: ps, ops: os, checkpoints: cps, wear: ws, blocks: bs, mappings: ms, configs: cs, db: db},
+		Plans:   &PlanService{plans: ps, ops: os, checkpoints: cps, wear: ws, blocks: bs, mappings: ms, configs: cs, db: db, createMu: &sync.Mutex{}},
 		Certs:   &CertService{certs: certs, plans: ps, configs: cs, mappings: ms, issuer: issuer},
 		Stats:   &StatsService{configs: cs, plans: ps, certs: certs, blocks: bs, wear: ws},
 		DB:      db,
