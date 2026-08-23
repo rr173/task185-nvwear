@@ -57,6 +57,47 @@ func TestPlanStoreHashUnique(t *testing.T) {
 	}
 }
 
+// TestPlanStoreGetByHashScopedByConfig 验证 GetByHash 按 (config_id, plan_hash)
+// 查找：不同配置下相同哈希互不误配。
+func TestPlanStoreGetByHashScopedByConfig(t *testing.T) {
+	db, _ := Open(filepath.Join(t.TempDir(), "test.db"))
+	defer db.Close()
+	ps := NewPlanStore(db)
+	now := time.Now()
+	inA := &model.OperationPlan{
+		ID: "pa", ConfigID: "cfgA", Name: "A", Status: model.PlanEditing,
+		PlanHash: "samehash", OpCount: 1, CreatedAt: now, UpdatedAt: now,
+	}
+	inB := &model.OperationPlan{
+		ID: "pb", ConfigID: "cfgB", Name: "B", Status: model.PlanEditing,
+		PlanHash: "samehash", OpCount: 1, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := ps.Create(inA); err != nil {
+		t.Fatalf("create A: %v", err)
+	}
+	if err := ps.Create(inB); err != nil {
+		t.Fatalf("create B: %v", err)
+	}
+	gotA, err := ps.GetByHash("cfgA", "samehash")
+	if err != nil {
+		t.Fatalf("GetByHash cfgA: %v", err)
+	}
+	if gotA.ID != "pa" || gotA.ConfigID != "cfgA" {
+		t.Fatalf("cfgA 误配为 %+v", gotA)
+	}
+	gotB, err := ps.GetByHash("cfgB", "samehash")
+	if err != nil {
+		t.Fatalf("GetByHash cfgB: %v", err)
+	}
+	if gotB.ID != "pb" || gotB.ConfigID != "cfgB" {
+		t.Fatalf("cfgB 误配为 %+v", gotB)
+	}
+	// 不存在的配置即使哈希相同，也应 not found。
+	if _, err := ps.GetByHash("cfgZ", "samehash"); err != model.ErrNotFound {
+		t.Fatalf("不存在的配置应返回 ErrNotFound，实际 %v", err)
+	}
+}
+
 func TestWearStoreReplace(t *testing.T) {
 	db, _ := Open(filepath.Join(t.TempDir(), "test.db"))
 	defer db.Close()

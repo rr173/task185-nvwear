@@ -56,8 +56,12 @@ func (s *PlanService) Create(ctx context.Context, in PlanCreateInput) (*model.Op
 	if len(in.Ops) == 0 {
 		return nil, fmt.Errorf("%w: 计划至少包含一个操作", model.ErrInvalidInput)
 	}
+	// 先为操作赋序，让哈希显式编码操作顺序，与 AppendOps 重算路径口径一致。
+	for i := range in.Ops {
+		in.Ops[i].Seq = i + 1
+	}
 	hash := hashOps(in.Ops)
-	// 同配置同哈希不重复创建。
+	// 同配置、同类型、同顺序、同参数的计划才视为同一计划，不重复创建。
 	if existing, err := s.plans.GetByHash(in.ConfigID, hash); err == nil {
 		return existing, nil
 	}
@@ -69,8 +73,7 @@ func (s *PlanService) Create(ctx context.Context, in PlanCreateInput) (*model.Op
 	if err := s.plans.Create(p); err != nil {
 		return nil, err
 	}
-	for i, op := range in.Ops {
-		op.Seq = i + 1
+	for _, op := range in.Ops {
 		if err := s.ops.Insert(p.ID, op); err != nil {
 			return nil, err
 		}
@@ -318,11 +321,13 @@ func budgetEvaluator(cfg *model.StorageConfig, l geometry.Layout) (*budget.Evalu
 	return budget.New(cfg.MaxEraseCycles, cfg.WarnThreshold, cfg.ReservedBlocks, l.UsableBlocks(), 80)
 }
 
-// hashOps 计算操作序列哈希。
+// hashOps 计算操作序列哈希：操作类型、顺序与参数共同决定计划身份。
+// Note 是描述性字段，不计入身份——同语义计划不应仅因备注文本不同就被拆成两份。
 func hashOps(ops []model.PlanOperation) string {
 	h := sha256.New()
-	for _, op := range ops {
-		fmt.Fprintf(h, "%d|%d|%d|%d|%d;", op.Seq, op.LPN, op.SrcPPN, op.DestPPN, op.BlockIndex)
+	for i, op := range ops {
+		fmt.Fprintf(h, "%d|%s|%d|%d|%d|%d|%d;",
+			op.Seq, op.Type, op.LPN, op.SrcPPN, op.DestPPN, op.BlockIndex, i)
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }

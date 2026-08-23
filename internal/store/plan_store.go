@@ -32,11 +32,12 @@ func (s *PlanStore) Get(id string) (*model.OperationPlan, error) {
 	return scanPlan(row)
 }
 
-// GetByHash 按配置+哈希查找（同哈希不重复模拟）。
+// GetByHash 按配置+哈希查找（同配置、同类型、同顺序、同参数才视为同一计划，不重复模拟）。
+// 与唯一索引 idx_plans_hash (config_id, plan_hash) 对齐：跨配置的同哈希不误配。
 func (s *PlanStore) GetByHash(configID, hash string) (*model.OperationPlan, error) {
 	row := s.db.sql.QueryRow(`SELECT id,config_id,name,status,plan_hash,op_count,sim_cursor,
 		violation_step,violation_msg,created_at,updated_at,simulated_at
-		FROM operation_plans WHERE plan_hash=?`, hash)
+		FROM operation_plans WHERE config_id=? AND plan_hash=?`, configID, hash)
 	return scanPlan(row)
 }
 
