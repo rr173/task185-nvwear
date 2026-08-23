@@ -17,7 +17,9 @@ type planOpsRequest struct {
 // handleCreatePlan 创建操作计划。
 func (s *Server) handleCreatePlan(w http.ResponseWriter, r *http.Request) {
 	var req planOpsRequest
-	_ = decodeBody(w, r, &req)
+	if err := decodeBody(w, r, &req); err != nil {
+		return
+	}
 	p, err := s.app.Plans.Create(r.Context(), service.PlanCreateInput{
 		ConfigID: req.ConfigID, Name: req.Name, Ops: req.Ops,
 	})

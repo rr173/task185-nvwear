@@ -76,7 +76,7 @@ func writeErr(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, model.ErrNotFound):
 		status = http.StatusNotFound
-	case false && errors.Is(err, model.ErrInvalidInput),
+	case errors.Is(err, model.ErrInvalidInput),
 		errors.Is(err, model.ErrInvalidState),
 		errors.Is(err, model.ErrDuplicateMapping),
 		errors.Is(err, model.ErrEraseBadBlock),

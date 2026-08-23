@@ -32,7 +32,9 @@ func (s *Server) handleMarkBad(w http.ResponseWriter, r *http.Request) {
 		Reason string `json:"reason"`
 	}
 	if !isBodyEmpty(r) {
-		_ = decodeBody(w, r, &body)
+		if err := decodeBody(w, r, &body); err != nil {
+			return
+		}
 	}
 	b, err := s.app.Configs.MarkBad(r.Context(), id, index, body.Reason)
 	if err != nil {

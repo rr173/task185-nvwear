@@ -9,7 +9,9 @@ import (
 // handleCreateConfig 创建存储配置。
 func (s *Server) handleCreateConfig(w http.ResponseWriter, r *http.Request) {
 	var in service.ConfigCreateInput
-	_ = decodeBody(w, r, &in)
+	if err := decodeBody(w, r, &in); err != nil {
+		return
+	}
 	cfg, err := s.app.Configs.Create(r.Context(), in)
 	if err != nil {
 		writeErr(w, err)
