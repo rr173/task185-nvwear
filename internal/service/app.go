@@ -31,7 +31,7 @@ func New(db *store.DB) *App {
 
 	return &App{
 		Configs: &ConfigService{configs: cs, blocks: bs, mappings: ms},
-		Plans:   &PlanService{plans: ps, ops: os, checkpoints: cps, wear: ws, blocks: bs, mappings: ms, configs: cs, db: db, createMu: nil},
+		Plans:   &PlanService{plans: ps, ops: os, checkpoints: cps, wear: ws, blocks: bs, mappings: ms, configs: cs, db: db},
 		Certs:   &CertService{certs: certs, plans: ps, configs: cs, mappings: ms, issuer: issuer},
 		Stats:   &StatsService{configs: cs, plans: ps, certs: certs, blocks: bs, wear: ws},
 		DB:      db,

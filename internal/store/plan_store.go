@@ -12,16 +12,36 @@ type PlanStore struct{ db *DB }
 
 func NewPlanStore(db *DB) *PlanStore { return &PlanStore{db: db} }
 
-// Create 创建计划。
+// Create 原子插入计划；同 (config_id, plan_hash) 已存在则不写，返回 ErrConcurrentCreate。
+// 依赖唯一索引 idx_plans_hash(config_id, plan_hash)：并发请求里只有第一个写入成功，
+// 其余由 ON CONFLICT 静默跳过并通过 RowsAffected==0 被识别为并发收敛。
 func (s *PlanStore) Create(p *model.OperationPlan) error {
-	_, err := s.db.sql.Exec(`INSERT INTO operation_plans
+	res, err := s.db.sql.Exec(`INSERT INTO operation_plans
 		(id,config_id,name,status,plan_hash,op_count,sim_cursor,violation_step,violation_msg,
 		 created_at,updated_at,simulated_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING`,
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+		ON CONFLICT(config_id, plan_hash) DO NOTHING`,
 		p.ID, p.ConfigID, p.Name, p.Status, p.PlanHash, p.OpCount, p.SimCursor,
 		p.ViolationStep, p.ViolationMsg, p.CreatedAt.Format(time.RFC3339Nano),
 		p.UpdatedAt.Format(time.RFC3339Nano), nil)
-	return err
+	if err != nil {
+		return WrapDBError(err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return WrapDBError(err)
+	}
+	if n == 0 {
+		// 同哈希行已由并发请求写入：调用方应改读已有计划并收敛。
+		return ErrConcurrentCreate
+	}
+	return nil
+}
+
+// Delete 删除计划行（创建中途 ops 写入失败时回滚，避免孤立计划）。
+func (s *PlanStore) Delete(id string) error {
+	_, err := s.db.sql.Exec(`DELETE FROM operation_plans WHERE id=?`, id)
+	return WrapDBError(err)
 }
 
 // Get 读取计划。

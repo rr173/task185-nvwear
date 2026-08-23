@@ -1,7 +1,9 @@
 package store
 
 import (
+	"fmt"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -54,6 +56,57 @@ func TestPlanStoreHashUnique(t *testing.T) {
 	}
 	if got.ID != "p1" {
 		t.Fatalf("hash lookup = %s", got.ID)
+	}
+}
+
+// TestPlanStoreCreateConcurrentConverges 直接验证 store 层并发收敛：
+// 多个 goroutine 用不同 ID 插入相同 (config_id, plan_hash)，应只有一个成功，
+// 其余收到 ErrConcurrentCreate（而非裸 UNIQUE 约束错误），且仅留一行记录。
+func TestPlanStoreCreateConcurrentConverges(t *testing.T) {
+	db, _ := Open(filepath.Join(t.TempDir(), "test.db"))
+	defer db.Close()
+	ps := NewPlanStore(db)
+
+	const n = 40
+	var wg sync.WaitGroup
+	errs := make([]error, n)
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func(i int) {
+			defer wg.Done()
+			errs[i] = ps.Create(&model.OperationPlan{
+				ID: fmt.Sprintf("plan-%d", i), ConfigID: "cfg1", Name: "dup",
+				Status: model.PlanEditing, PlanHash: "samehash", OpCount: 1,
+				CreatedAt: time.Now(), UpdatedAt: time.Now(),
+			})
+		}(i)
+	}
+	wg.Wait()
+
+	wins := 0
+	concurrent := 0
+	for _, err := range errs {
+		switch {
+		case err == nil:
+			wins++
+		case IsConcurrentCreate(err):
+			concurrent++
+		default:
+			t.Fatalf("意外错误（应为 nil 或 ErrConcurrentCreate）: %v", err)
+		}
+	}
+	if wins != 1 {
+		t.Fatalf("应有且仅有一个请求成功，实际 %d", wins)
+	}
+	if concurrent != n-1 {
+		t.Fatalf("其余 %d 应为 ErrConcurrentCreate，实际 %d", n-1, concurrent)
+	}
+	rows, err := ps.List("cfg1")
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("数据库应仅 1 行，实际 %d", len(rows))
 	}
 }
 

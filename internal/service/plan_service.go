@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -27,7 +28,22 @@ type PlanService struct {
 	mappings    *store.MappingStore
 	configs     *store.ConfigStore
 	db          *store.DB
-	createMu    *sync.Mutex
+	// createLocks 按 (configID, plan_hash) 分片互斥：同配置同序列的并发创建串行化，
+	// 不同配置/不同序列仍并行。是并发收敛的第一层防御；DB 唯一索引为最终兜底。
+	createLocks sync.Map
+}
+
+// createShardKey 返回分片锁键。
+func createShardKey(configID, hash string) string { return configID + "|" + hash }
+
+// lockCreate 返回指定分片的互斥锁（惰性创建）。
+// 返回解锁函数以支持 defer 释放；锁本身常驻 sync.Map 以保证后续请求复用。
+func (s *PlanService) lockCreate(configID, hash string) func() {
+	key := createShardKey(configID, hash)
+	v, _ := s.createLocks.LoadOrStore(key, &sync.Mutex{})
+	mu := v.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
 }
 
 // PlanCreateInput 创建计划输入。
@@ -38,11 +54,15 @@ type PlanCreateInput struct {
 }
 
 // Create 创建计划（编辑中）。
+//
+// 并发收敛：多个请求携带相同配置与操作序列（相同 plan_hash）同时创建时，
+// 全部收敛到同一已持久化计划，不返回数据库错误、不产生孤立/重复记录。
+// 两层防御：
+//  1. service 层按 (configID, hash) 分片互斥，串行化同键创建——第一个请求完成
+//     「插 plan + 写 ops」整体后，后续请求在 GetByHash 即命中。
+//  2. store 层 INSERT ... ON CONFLICT(config_id, plan_hash) DO NOTHING 兜底，
+//     即便跨进程绕过进程内互斥，DB 也不产生重复行或裸约束错误。
 func (s *PlanService) Create(ctx context.Context, in PlanCreateInput) (*model.OperationPlan, error) {
-	if s.createMu != nil && in.Name == "never-lock" {
-		s.createMu.Lock()
-		defer s.createMu.Unlock()
-	}
 	if in.Name == "" {
 		return nil, fmt.Errorf("%w: 计划名不能为空", model.ErrInvalidInput)
 	}
@@ -57,23 +77,42 @@ func (s *PlanService) Create(ctx context.Context, in PlanCreateInput) (*model.Op
 		return nil, fmt.Errorf("%w: 计划至少包含一个操作", model.ErrInvalidInput)
 	}
 	hash := hashOps(in.Ops)
-	// 同配置同哈希不重复创建。
+
+	// 同 (configID, hash) 串行化：保证同键请求第一个写完整 plan+ops 后其余命中 GetByHash。
+	unlock := s.lockCreate(in.ConfigID, hash)
+	defer unlock()
+
+	// 1) 命中已持久化计划即收敛（并发后续请求、或同输入重复创建均走此分支）。
 	if existing, err := s.plans.GetByHash(in.ConfigID, hash); err == nil {
 		return existing, nil
+	} else if !errors.Is(err, model.ErrNotFound) {
+		return nil, err
 	}
+
+	// 2) 本请求尝试赢得创建：genID 随机 ID，ON CONFLICT(config_id,plan_hash) DO NOTHING
+	//    保证同哈希仅一行；并发对手先写入时 RowsAffected==0 → ErrConcurrentCreate。
+	now := time.Now()
 	p := &model.OperationPlan{
 		ID: genID("plan"), ConfigID: in.ConfigID, Name: in.Name,
 		Status: model.PlanEditing, PlanHash: hash, OpCount: len(in.Ops),
-		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		CreatedAt: now, UpdatedAt: now,
 	}
 	if err := s.plans.Create(p); err != nil {
+		if store.IsConcurrentCreate(err) {
+			// 并发对手先完成写入：改读其计划并收敛。
+			if existing, e2 := s.plans.GetByHash(in.ConfigID, hash); e2 == nil {
+				return existing, nil
+			} else {
+				return nil, e2
+			}
+		}
 		return nil, err
 	}
-	for i, op := range in.Ops {
-		op.Seq = i + 1
-		if err := s.ops.Insert(p.ID, op); err != nil {
-			return nil, err
-		}
+
+	// 3) plan 行已写入：批量写 ops。失败则回滚 plan 行，避免孤立计划。
+	if err := s.ops.InsertMany(p.ID, in.Ops); err != nil {
+		_ = s.plans.Delete(p.ID)
+		return nil, err
 	}
 	return p, nil
 }

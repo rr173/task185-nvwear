@@ -128,13 +128,17 @@ func JSONString(v any) string {
 	return string(b)
 }
 
-// WrapDBError 将 sql.ErrNoRows 映射为 ErrNotFound。
+// WrapDBError 将底层驱动错误映射为领域错误：sql.ErrNoRows → ErrNotFound；
+// SQLite 唯一约束冲突 → ErrConflict，避免裸数据库约束错误泄漏到上层。
 func WrapDBError(err error) error {
+	if err == nil {
+		return nil
+	}
 	if err == sql.ErrNoRows {
 		return model.ErrNotFound
 	}
-	if err != nil {
-		return fmt.Errorf("db: %w", err)
+	if mapped := mapSQLiteError(err); mapped != nil {
+		return mapped
 	}
-	return nil
+	return fmt.Errorf("db: %w", err)
 }
