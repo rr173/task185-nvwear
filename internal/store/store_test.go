@@ -108,3 +108,31 @@ func TestCertStoreRevoke(t *testing.T) {
 		t.Fatalf("revoked mismatch: %+v", got)
 	}
 }
+
+// TestCertStoreSnapshotRoundTrip 验证两份快照经持久化重启后与签发时一致、不错位。
+func TestCertStoreSnapshotRoundTrip(t *testing.T) {
+	db, _ := Open(filepath.Join(t.TempDir(), "test.db"))
+	defer db.Close()
+	cs := NewCertStore(db)
+	// 用可区分的内容，使快照错位可被断言发现。
+	c := &model.StrategyCertificate{
+		ID: "cert1", PlanID: "p1", ConfigID: "cfg1", Status: model.CertPublished,
+		Name: "policy",
+		ConfigSnapshot:  `{"id":"cfg1","die_count":2}`,
+		MappingSnapshot: `[{"lpn":1,"ppn":10}]`,
+		PlanHash: "h", IssuedAt: time.Now(),
+	}
+	if err := cs.Insert(c); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	got, err := cs.Get("cert1")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.ConfigSnapshot != c.ConfigSnapshot {
+		t.Fatalf("配置快照错位/丢失: got %s want %s", got.ConfigSnapshot, c.ConfigSnapshot)
+	}
+	if got.MappingSnapshot != c.MappingSnapshot {
+		t.Fatalf("映射快照错位/丢失: got %s want %s", got.MappingSnapshot, c.MappingSnapshot)
+	}
+}

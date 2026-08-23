@@ -19,6 +19,13 @@ func TestIssue(t *testing.T) {
 	if c.IssuedAt.IsZero() {
 		t.Fatal("签发时间为零")
 	}
+	// 配置快照与映射快照必须各归其位，不得错位。
+	if c.ConfigSnapshot != `{"die":2}` {
+		t.Fatalf("配置快照错位: got %s", c.ConfigSnapshot)
+	}
+	if c.MappingSnapshot != `[{"lpn":1}]` {
+		t.Fatalf("映射快照错位: got %s", c.MappingSnapshot)
+	}
 }
 
 func TestRevoke(t *testing.T) {

@@ -17,7 +17,7 @@ func (s *CertStore) Insert(c *model.StrategyCertificate) error {
 		(id,plan_id,config_id,status,name,config_snapshot,mapping_snapshot,plan_hash,
 		 issued_at,revoked_at,revoke_reason)
 		VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-		c.ID, c.PlanID, c.ConfigID, c.Status, c.Name, c.MappingSnapshot, c.ConfigSnapshot,
+		c.ID, c.PlanID, c.ConfigID, c.Status, c.Name, c.ConfigSnapshot, c.MappingSnapshot,
 		c.PlanHash, c.IssuedAt.Format(time.RFC3339Nano), nil, nil)
 	return err
 }

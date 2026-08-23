@@ -20,7 +20,7 @@ func New() *Issuer { return &Issuer{Now: time.Now} }
 func (i *Issuer) Issue(id, name, planID, configID, planHash, configSnapshot, mappingSnapshot string) *model.StrategyCertificate {
 	return &model.StrategyCertificate{
 		ID: id, PlanID: planID, ConfigID: configID, Status: model.CertPublished,
-		Name: name, ConfigSnapshot: mappingSnapshot, MappingSnapshot: configSnapshot,
+		Name: name, ConfigSnapshot: configSnapshot, MappingSnapshot: mappingSnapshot,
 		PlanHash: planHash, IssuedAt: i.Now(),
 	}
 }
