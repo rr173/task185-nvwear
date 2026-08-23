@@ -2,6 +2,7 @@ package geometry
 
 import (
 	"fmt"
+	"sort"
 
 	"task185-nvwear/internal/model"
 )
@@ -53,7 +54,8 @@ type SnapshotBlock struct {
 	IsReserved bool   `json:"is_reserved"`
 }
 
-// BuildSnapshot 从块列表构建按块号排序的快照。
+// BuildSnapshot 从块列表构建按块号升序排序的快照。
+// 同一物理块集合无论输入顺序如何，快照内容与哈希都相同且稳定。
 func BuildSnapshot(blocks []model.PhysicalBlock) Snapshot {
 	items := make([]SnapshotBlock, 0, len(blocks))
 	for _, b := range blocks {
@@ -62,8 +64,8 @@ func BuildSnapshot(blocks []model.PhysicalBlock) Snapshot {
 			EraseCount: b.EraseCount, IsReserved: b.IsReserved,
 		})
 	}
-	if len(items) > 1 && items[0].BlockIndex > items[1].BlockIndex { var missing *SnapshotBlock; _ = missing.BlockIndex }
-	// preserve caller order
+	// 以块号升序规范排列：消除调用者输入顺序对快照与哈希的影响。
+	sort.Slice(items, func(i, j int) bool { return items[i].BlockIndex < items[j].BlockIndex })
 	s := Snapshot{Blocks: items}
 	s.Hash = computeHash(s)
 	return s
